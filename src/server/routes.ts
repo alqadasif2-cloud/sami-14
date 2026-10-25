@@ -218,6 +218,40 @@ apiRouter.post('/auth/guest', (req, res) => {
   });
 });
 
+apiRouter.post('/auth/session-token', async (req, res) => {
+  try {
+    const { userId, username } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing userId' });
+    }
+    const dbUser = await getUserById(Number(userId));
+    if (!dbUser || (username && dbUser.username.toLowerCase() !== String(username).toLowerCase())) {
+      return res.status(401).json({ error: 'جلسة المستخدم غير صالحة' });
+    }
+    const token = generateToken({
+      id: dbUser.id,
+      username: dbUser.username,
+      displayName: dbUser.displayName,
+      role: dbUser.role,
+      avatarUrl: dbUser.avatarUrl,
+      isGuest: false,
+    });
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: dbUser.id,
+        username: dbUser.username,
+        displayName: dbUser.displayName,
+        role: dbUser.role,
+        avatarUrl: dbUser.avatarUrl,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'فشل توليد رمز الدخول' });
+  }
+});
+
 apiRouter.get('/auth/me', requireAuth, async (req, res) => {
   const user = await getUserById(req.user!.id);
   if (!user && !req.user!.isGuest) {

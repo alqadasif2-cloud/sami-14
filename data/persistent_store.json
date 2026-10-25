@@ -4,7 +4,7 @@
       "id": 1,
       "username": "Sami",
       "displayName": "القائد Sami",
-      "passwordHash": "a43ef686e8ea3914be68fe829372b032d6072adaf3132d3b8643a1081559f903",
+      "passwordHash": "df296d8ba60ffd5550bb7df6991cc9ce6e923cf827a63211da62849409d0d42e",
       "salt": "6494a3847d9d9c8e05864d11a5e37f3f",
       "role": "owner",
       "avatarUrl": null,
@@ -155,10 +155,35 @@
     "downloadUrl": "https://github.com/alqadasif2-cloud/Sami-13/actions",
     "description": "تحديث استقرار وإصلاح شامل لمنظومة Sami 13 وبناء APK عبر GitHub Actions.",
     "isMandatory": false,
-    "minSupportedVersionCode": 13,
     "publishedBy": "القائد Sami",
-    "updatedAt": 1792904572922,
+    "updatedAt": 1792914220579,
     "isActive": true,
     "isHidden": false
-  }
+  },
+  "appUpdatesHistory": [
+    {
+      "id": "latest",
+      "versionName": "1.4.0",
+      "versionCode": 14,
+      "downloadUrl": "https://github.com/alqadasif2-cloud/Sami-13/actions/14",
+      "description": "إصدار تجريبي رقم 1.4.0 لاختبار آلية الإيقاف والحفظ",
+      "isMandatory": false,
+      "publishedBy": "القائد Sami",
+      "updatedAt": 1792914203472,
+      "isActive": true,
+      "isHidden": false
+    },
+    {
+      "id": "latest",
+      "versionName": "1.3.1",
+      "versionCode": 13,
+      "downloadUrl": "https://github.com/alqadasif2-cloud/Sami-13/actions",
+      "description": "تحديث استقرار وإصلاح شامل لمنظومة Sami 13 وبناء APK عبر GitHub Actions.",
+      "isMandatory": false,
+      "publishedBy": "القائد Sami",
+      "updatedAt": 1792914220579,
+      "isActive": true,
+      "isHidden": false
+    }
+  ]
 }

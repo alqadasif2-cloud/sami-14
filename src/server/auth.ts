@@ -104,7 +104,7 @@ export function verifyToken(token: string): UserPayload | null {
   }
 }
 
-export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
+export async function authenticateToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   let token: string | undefined;
 
@@ -120,7 +120,31 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     const user = verifyToken(token);
     if (user) {
       req.user = user;
+      return next();
     }
+  }
+
+  // Also support x-sami-session header (from client localStorage) with database verification
+  const sessionHeader = req.headers['x-sami-session'];
+  if (sessionHeader) {
+    try {
+      const parsed = typeof sessionHeader === 'string' ? JSON.parse(sessionHeader) : sessionHeader;
+      if (parsed && parsed.id) {
+        const { getUserById } = await import('./db.ts');
+        const dbUser = await getUserById(Number(parsed.id));
+        if (dbUser && dbUser.username.toLowerCase() === String(parsed.username || '').toLowerCase()) {
+          req.user = {
+            id: dbUser.id,
+            username: dbUser.username,
+            displayName: dbUser.displayName,
+            role: dbUser.role, // strictly verified from database!
+            avatarUrl: dbUser.avatarUrl || null,
+            isGuest: false,
+          };
+          return next();
+        }
+      }
+    } catch {}
   }
 
   next();
