@@ -67,6 +67,7 @@ interface LocalDiskStore {
   challenges: Record<string, any>;
   trades: Record<string, any[]>;
   appUpdates?: AppUpdateRecord;
+  appUpdatesHistory?: AppUpdateRecord[];
 }
 
 function loadLocalDiskStore(): LocalDiskStore {
@@ -349,6 +350,7 @@ export interface ChannelRecord {
   allowedMemberIds: number[];
   memberIds: number[];
   createdAt: number;
+  displayMemberCount?: number | null;
 }
 
 export const INITIAL_CHANNELS_CONFIG: ChannelRecord[] = [
@@ -822,7 +824,7 @@ export async function saveFullChallengeAndTrades(userId: number, challenge: Chal
 // ============================================================================
 
 export interface AppUpdateRecord {
-  id: string; // 'latest'
+  id: string; // 'latest' or unique id
   versionName: string;
   versionCode: number;
   downloadUrl: string;
@@ -831,6 +833,8 @@ export interface AppUpdateRecord {
   minSupportedVersionCode?: number;
   publishedBy?: string;
   updatedAt: number;
+  isActive: boolean;
+  isHidden?: boolean;
 }
 
 const DEFAULT_APP_UPDATE: AppUpdateRecord = {
@@ -843,6 +847,8 @@ const DEFAULT_APP_UPDATE: AppUpdateRecord = {
   minSupportedVersionCode: 13,
   publishedBy: 'Sami',
   updatedAt: Date.now(),
+  isActive: true,
+  isHidden: false,
 };
 
 export async function getLatestAppUpdate(): Promise<AppUpdateRecord> {
@@ -851,6 +857,7 @@ export async function getLatestAppUpdate(): Promise<AppUpdateRecord> {
       const doc = await firestoreClient.collection('app_updates').doc('latest').get();
       if (doc.exists) {
         const data = doc.data() as any;
+        const isActive = data.isActive !== false && !data.isHidden;
         return {
           id: 'latest',
           versionName: data.versionName || DEFAULT_APP_UPDATE.versionName,
@@ -861,6 +868,8 @@ export async function getLatestAppUpdate(): Promise<AppUpdateRecord> {
           minSupportedVersionCode: data.minSupportedVersionCode ? Number(data.minSupportedVersionCode) : undefined,
           publishedBy: data.publishedBy || 'Sami',
           updatedAt: Number(data.updatedAt) || Date.now(),
+          isActive,
+          isHidden: !isActive,
         };
       }
     } catch (err: any) {
@@ -869,10 +878,108 @@ export async function getLatestAppUpdate(): Promise<AppUpdateRecord> {
   }
 
   if (diskStore.appUpdates) {
+    const isAct = diskStore.appUpdates.isActive !== false && !diskStore.appUpdates.isHidden;
+    diskStore.appUpdates.isActive = isAct;
+    diskStore.appUpdates.isHidden = !isAct;
     return diskStore.appUpdates;
   }
 
   return DEFAULT_APP_UPDATE;
+}
+
+export async function getAppUpdatesHistory(): Promise<AppUpdateRecord[]> {
+  const current = await getLatestAppUpdate();
+  const list: AppUpdateRecord[] = [];
+
+  if (firestoreClient) {
+    try {
+      const snap = await firestoreClient.collection('app_updates').orderBy('updatedAt', 'desc').get();
+      snap.forEach((doc: any) => {
+        const d = doc.data() as any;
+        const isAct = d.isActive !== false && !d.isHidden;
+        list.push({
+          id: doc.id,
+          versionName: d.versionName || '1.3.1',
+          versionCode: Number(d.versionCode) || 13,
+          downloadUrl: d.downloadUrl || '',
+          description: d.description || '',
+          isMandatory: !!d.isMandatory,
+          minSupportedVersionCode: d.minSupportedVersionCode ? Number(d.minSupportedVersionCode) : undefined,
+          publishedBy: d.publishedBy || 'Sami',
+          updatedAt: Number(d.updatedAt) || Date.now(),
+          isActive: isAct,
+          isHidden: !isAct,
+        });
+      });
+    } catch (err: any) {
+      console.warn('[Sami DB] Firestore getAppUpdatesHistory notice:', err.message);
+    }
+  }
+
+  if (list.length === 0) {
+    const history = diskStore.appUpdatesHistory || [];
+    if (history.length > 0) {
+      return history.map(h => ({
+        ...h,
+        isActive: h.isActive !== false && !h.isHidden,
+        isHidden: !(h.isActive !== false && !h.isHidden),
+      }));
+    }
+    return [current];
+  }
+
+  return list;
+}
+
+export async function toggleAppUpdateVisibility(
+  targetIdOrVersion: string | number | undefined,
+  isActive: boolean
+): Promise<AppUpdateRecord> {
+  const current = await getLatestAppUpdate();
+  current.isActive = !!isActive;
+  current.isHidden = !isActive;
+  current.updatedAt = Date.now();
+
+  // Save latest doc
+  if (firestoreClient) {
+    try {
+      await firestoreClient.collection('app_updates').doc('latest').set({
+        ...current,
+        isActive: !!isActive,
+        isHidden: !isActive,
+      }, { merge: true });
+
+      if (targetIdOrVersion && targetIdOrVersion !== 'latest') {
+        const docId = String(targetIdOrVersion);
+        await firestoreClient.collection('app_updates').doc(docId).set({
+          isActive: !!isActive,
+          isHidden: !isActive,
+        }, { merge: true });
+      }
+    } catch (err: any) {
+      console.warn('[Sami DB] Firestore toggleAppUpdateVisibility notice:', err.message);
+    }
+  }
+
+  diskStore.appUpdates = current;
+  if (!diskStore.appUpdatesHistory) {
+    diskStore.appUpdatesHistory = [{ ...current }];
+  } else {
+    for (const item of diskStore.appUpdatesHistory) {
+      if (
+        !targetIdOrVersion ||
+        targetIdOrVersion === 'latest' ||
+        item.id === String(targetIdOrVersion) ||
+        item.versionCode === Number(targetIdOrVersion)
+      ) {
+        item.isActive = !!isActive;
+        item.isHidden = !isActive;
+      }
+    }
+  }
+  saveLocalDiskStore(diskStore);
+  console.log('[Sami DB] Toggled app update visibility:', current.versionName, 'isActive =', isActive);
+  return current;
 }
 
 export async function saveAppUpdateRecord(update: {
@@ -894,17 +1001,31 @@ export async function saveAppUpdateRecord(update: {
     minSupportedVersionCode: update.minSupportedVersionCode ? Math.floor(Number(update.minSupportedVersionCode)) : undefined,
     publishedBy: update.publishedBy || 'Sami',
     updatedAt: Date.now(),
+    isActive: true,
+    isHidden: false,
   };
 
   if (firestoreClient) {
     try {
       await firestoreClient.collection('app_updates').doc('latest').set(record);
+      // Also archive into history collection by versionCode
+      await firestoreClient.collection('app_updates').doc(`v_${record.versionCode}`).set(record);
     } catch (err: any) {
       console.warn('[Sami DB] Firestore saveAppUpdateRecord notice:', err.message);
     }
   }
 
   diskStore.appUpdates = record;
+  if (!diskStore.appUpdatesHistory) {
+    diskStore.appUpdatesHistory = [];
+  }
+  const existingIdx = diskStore.appUpdatesHistory.findIndex(h => h.versionCode === record.versionCode);
+  if (existingIdx >= 0) {
+    diskStore.appUpdatesHistory[existingIdx] = { ...record };
+  } else {
+    diskStore.appUpdatesHistory.unshift({ ...record });
+  }
+
   saveLocalDiskStore(diskStore);
   console.log('[Sami DB] Successfully saved app update to shared store:', record.versionName, `(v${record.versionCode})`);
   return record;

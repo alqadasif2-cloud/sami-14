@@ -157,6 +157,8 @@
     "isMandatory": false,
     "minSupportedVersionCode": 13,
     "publishedBy": "القائد Sami",
-    "updatedAt": 1792904572922
+    "updatedAt": 1792904572922,
+    "isActive": true,
+    "isHidden": false
   }
 }

@@ -25,6 +25,8 @@ import {
   saveFullChallengeAndTrades,
   getLatestAppUpdate,
   saveAppUpdateRecord,
+  getAppUpdatesHistory,
+  toggleAppUpdateVisibility,
 } from './db';
 import { authenticateToken, requireAuth, requireRole, generateToken, verifyToken } from './auth';
 import { saveFile, getFile } from './storage';
@@ -274,11 +276,17 @@ apiRouter.get('/channels/:id', requireAuth, async (req, res) => {
 
 apiRouter.post('/channels', requireAuth, requireRole('owner'), async (req, res) => {
   try {
-    const { id, name, description, visibility, isPrivate, allowedMemberIds } = req.body;
+    const { id, name, description, visibility, isPrivate, allowedMemberIds, displayMemberCount } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'اسم القناة مطلوب' });
     }
     const channelId = id ? String(id).trim() : `chan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    let parsedCount: number | null = null;
+    if (displayMemberCount !== undefined && displayMemberCount !== null && displayMemberCount !== '') {
+      const parsed = parseInt(String(displayMemberCount).trim(), 10);
+      if (!isNaN(parsed) && parsed >= 0) parsedCount = parsed;
+    }
+
     const newChan = {
       id: channelId,
       name: String(name).trim(),
@@ -288,6 +296,7 @@ apiRouter.post('/channels', requireAuth, requireRole('owner'), async (req, res) 
       allowedMemberIds: Array.isArray(allowedMemberIds) ? Array.from(new Set([...allowedMemberIds, req.user!.id])) : [req.user!.id],
       memberIds: Array.isArray(allowedMemberIds) ? Array.from(new Set([...allowedMemberIds, req.user!.id])) : [req.user!.id],
       createdAt: Date.now(),
+      displayMemberCount: parsedCount,
     };
     await saveChannelRecord(newChan);
     res.json({ success: true, channel: newChan });
@@ -302,11 +311,19 @@ apiRouter.put('/channels/:id', requireAuth, requireRole('owner'), async (req, re
     if (!channel) {
       return res.status(404).json({ error: 'القناة غير موجودة' });
     }
-    const { name, description, visibility, isPrivate, allowedMemberIds } = req.body;
+    const { name, description, visibility, isPrivate, allowedMemberIds, displayMemberCount } = req.body;
     if (name) channel.name = String(name).trim();
     if (description !== undefined) channel.description = String(description).trim();
     if (visibility) channel.visibility = visibility === 'hidden' ? 'hidden' : 'public';
     if (isPrivate !== undefined) channel.isPrivate = !!isPrivate;
+    if (displayMemberCount !== undefined) {
+      if (displayMemberCount === null || displayMemberCount === '') {
+        channel.displayMemberCount = null;
+      } else {
+        const parsed = parseInt(String(displayMemberCount).trim(), 10);
+        channel.displayMemberCount = !isNaN(parsed) && parsed >= 0 ? parsed : null;
+      }
+    }
     if (Array.isArray(allowedMemberIds)) {
       channel.allowedMemberIds = Array.from(new Set([...allowedMemberIds, 1]));
       channel.memberIds = channel.allowedMemberIds;
@@ -929,6 +946,34 @@ apiRouter.post('/app-updates', requireAuth, requireRole('owner'), async (req, re
     });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل حفظ ونشر التحديث في قاعدة البيانات: ' + (err?.message || err) });
+  }
+});
+
+// GET /api/app-updates/history - Get all past updates and their active status (STRICT: OWNER ONLY)
+apiRouter.get('/app-updates/history', requireAuth, requireRole('owner'), async (req, res) => {
+  try {
+    const updates = await getAppUpdatesHistory();
+    res.json({ success: true, updates });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب سجل التحديثات: ' + (err?.message || err) });
+  }
+});
+
+// POST /api/app-updates/toggle - Pause / resume update visibility (STRICT: OWNER ONLY)
+apiRouter.post('/app-updates/toggle', requireAuth, requireRole('owner'), async (req, res) => {
+  try {
+    const { isActive, updateId, versionCode } = req.body;
+    const target = updateId || versionCode || 'latest';
+    const updated = await toggleAppUpdateVisibility(target, !!isActive);
+    res.json({
+      success: true,
+      message: isActive
+        ? 'تمت إعادة إظهار التحديث ومزامنته للمستخدمين بنجاح ✅'
+        : 'تم إيقاف ظهور التحديث وإخفاؤه عن جميع المستخدمين بنجاح ⏸️',
+      update: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تغيير حالة ظهور التحديث: ' + (err?.message || err) });
   }
 });
 
